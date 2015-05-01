@@ -26,6 +26,7 @@ class WP_QuadratumFrontEnd extends WP_PluginBase_v1_1 {
 		add_shortcode('wp_quadratum', array($this, 'map_shortcode'));
 		add_shortcode('wp_quadratum_map', array($this, 'map_shortcode'));
 		add_shortcode('wpq_map', array($this, 'map_shortcode'));
+		add_shortcode('wpq_list', array($this, 'list_shortcode'));
 
 		add_shortcode('wp_quadratum_locality', array($this, 'locality_shortcode'));
 		add_shortcode('wpq_locality', array($this, 'locality_shortcode'));
@@ -52,6 +53,67 @@ class WP_QuadratumFrontEnd extends WP_PluginBase_v1_1 {
 	 */
 
 	function render_checkin_map ($args, $shortcode=false) {
+		// $args = array (
+		//		'width' =>
+		//		'height' =>
+		//		'zoom' =>
+		//		'container-class' =>
+		//		'container-id' =>
+		//		'map-class' =>
+		//		'map-id' =>
+		//		'venue-class' =>
+		//		'checkin' =>
+		//	)
+
+		$provider = WP_Quadratum::get_option ('provider');
+		$content = array ();
+
+		if ($this->checkin) {
+			$venue = $this->checkin->venue;
+			$location = $venue->location;
+			$venue_url = 'https://foursquare.com/v/' . $venue->id;
+
+			$style = 'style="width:' . $args['width'] . $args['width_units'] . '"';
+			$content[] = '<div id="' . $args['container-id'] . '" class="' . $args['container-class'] .'" ' . $style . '>';
+
+			$style = 'style="max-width:none; position:relative; width:' . $args['width'] . $args['width_units'] . '; height:' . $args['height'] . $args['height_units']. ';"';
+			$content[] = '<div id="' . $args['map-id'] . '" class="' . $args['map-class'] . '" ' . $style . '></div>';
+			$content[] = '<div class="' . $args['venue-class'] . '">';
+
+			$params = array (
+				'venue-url' => $venue_url,
+				'venue-name' => $venue->name,
+				'checked-in-at' => $this->checkin->createdAt
+			);
+
+			$strapline = '<h5>Last seen at <a href="' . $venue_url . '?ref=' . WP_Quadratum::get_option('client_id') . '" target="_blank">' . $venue->name . '</a> on ' . date ("d M Y G:i T", $this->checkin->createdAt) . '</h5>';
+
+			apply_filters('wp_quadratum_checkin', $this->checkin);
+
+			$content[] = apply_filters ('wp_quadratum_strapline', $strapline, $params);
+
+			$content[] = '</div>';
+			$content[] = '</div>';
+
+			if ($shortcode) {
+				$content[] = '<form id="' . $args['form-id'] .'">';
+				$content[] = '<input type="hidden" id="' . $args['zoom-id'] . '" value="' . $args['zoom'] . '"/>';
+				$content[] = '</form>';
+			}
+		}
+
+		else {
+			$content[] = '<h5>Something went wrong; the Foursquare API might be down?</h5>';
+		}
+
+		return $content;
+	}
+
+/**
+	 * Create the HTML and Javascript for the checkin list
+	 */
+
+	function render_checkin_list ($args, $shortcode=false) {
 		// $args = array (
 		//		'width' =>
 		//		'height' =>
@@ -176,6 +238,63 @@ class WP_QuadratumFrontEnd extends WP_PluginBase_v1_1 {
 
 		return $content;
 	}
+
+function list_shortcode ($atts, $content=null) {
+		$options = WP_Quadratum::get_option();
+		if ($options['enable_map_sc'] === 'on') {
+			// TODO: handle self-closing and enclosing shortcode forms properly
+			// TODO: this function is fugly; need to break out the checkin acquisition
+			// and map generation code into a function/functions that can be called by
+			// both the shortcode, the widget and the the_content filter (when I write it)
+			// TODO: check and handle error responses from the 4sq API
+			// TODO: handle 4sq API response caching
+
+			static $instance = 0;
+
+			$container_id = 'wp-quadratum-shortcode-container-' . $instance;
+			$map_id = 'wp-quadratum-shortcode-map-' . $instance;
+			$form_id = 'wp-quadratum-shortcode-form-' . $instance;
+			$zoom_id = 'wp-quadratum-shortcode-zoom-' . $instance;
+			$content = array ();
+
+			extract (shortcode_atts (array (
+				'width' => 300,
+				'width_units' => 'px',
+				'height' => 300,
+				'height_units' => 'px',
+				'zoom' => 16
+			), $atts));
+
+			if (strpos($width_units, 'px') === false && strpos($width_units, '%') === false) {
+				$width_units = 'px';
+			}
+			if (strpos($height_units, 'px') === false && strpos($height_units, '%') === false) {
+				$height_units = 'px';
+			}
+
+			$args = array ();
+			$args['width'] = $width;
+			$args['width_units'] = $width_units;
+			$args['height'] = $height;
+			$args['height_units'] = $height_units;
+			$args['zoom'] = $zoom;
+			$args['container-class'] = 'wp-quadratum-shortcode-container';
+			$args['container-id'] = $container_id;
+			$args['map-class'] = 'wp-quadratum-shortcode-map';
+			$args['map-id'] = $map_id;
+			$args['venue-class'] = 'wp-quadratum-shortcode-venue';
+			$args['form-id'] = $form_id;
+			$args['zoom-id'] = $zoom_id;
+			$args['instance'] = $instance;
+			$content = WP_QuadratumFrontEnd::render_checkin_map ($args, true);
+			$instance++;
+
+			$content = implode (PHP_EOL, $content);
+		}
+
+		return $content;
+	}
+
 
 	function locality_shortcode($atts, $content=null) {
 		$options = WP_Quadratum::get_option();
